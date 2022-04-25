@@ -31,6 +31,7 @@ class PooPool(object):
         self.block_suffix = None
         self.target = None
         self.running = False
+        self.task_updated = False
         print(f"Connecting to pool at {url}, mining with {num_threads} threads")
         self.ws = websocket.WebSocketApp(url,
                                          on_open=self.on_open,
@@ -40,17 +41,32 @@ class PooPool(object):
         # self.ws.run_forever()
         self.daemon = Thread(target=self.ws.run_forever)
         self.daemon.start()
+        self.routine()
+
+    def routine(self):
+        try:
+            while not self.connected:
+                time.sleep(0.1)
+            while self.connected:
+                self.next_task()
+                while not self.task_updated:
+                    time.sleep(0.1)
+                self.task_updated = False
+                self.start_task()
+        except KeyboardInterrupt:
+            self.finish()
 
     def update_task(self):
         self.nonce_step = (self.nonce_end - self.nonce_start) // self.num_threads
         self.memory_size = len(self.block_prefix) + len(self.block_suffix) + NONCE_SIZE + PoW_SIZE + 1
         self.memory = SharedMemory(create=True, size=self.memory_size)
         self.processes = []
+        self.task_updated = True
 
     def next_task(self):
         self.ws.send(json.dumps({'type': 'task'}))
 
-    def start(self):
+    def start_task(self):
         self.running = True
         self.start_time = time.time()
         for i in range(self.num_threads):
@@ -61,6 +77,7 @@ class PooPool(object):
             self.processes.append(p)
         for p in self.processes:
             p.join()
+        time.sleep(1)
         self.end_time = time.time()
         success = self.memory.buf[0]
         block = str(self.memory.buf[1:1 + len(self.block_prefix) + len(self.block_suffix) + NONCE_SIZE].tobytes(),
@@ -77,7 +94,6 @@ class PooPool(object):
             self.ws.send(json.dumps({'type': 'submit', 'block': block}))
         else:
             print("Failed to mine block")
-        self.next_task()
 
     def end_task(self):
         self.memory.buf[0] = 2
@@ -88,7 +104,6 @@ class PooPool(object):
     def on_open(self, ws):
         print("Connected")
         self.connected = True
-        self.next_task()
 
     def on_message(self, ws, message):
         try:
@@ -110,17 +125,13 @@ class PooPool(object):
                 self.block_suffix = task['block_suffix']
                 self.target = task['target']
                 self.update_task()
-                print("Task started")
-                self.start()
             elif msg_type == 'newBlock':
                 if not self.running:
                     print("### Error: Received newBlock while not running ###")
                     return
                 self.end_task()
-                self.next_task()
             elif msg_type == 'error':
                 self.end_task()
-                self.next_task()
             else:
                 print("### Error: Unknown message type ###")
                 return
