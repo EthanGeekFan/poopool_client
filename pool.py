@@ -4,6 +4,7 @@ import websocket
 from multiprocessing.shared_memory import SharedMemory
 from multiprocessing import Process
 from multiprocessing import cpu_count
+from threading import Thread
 import miner
 import sys
 
@@ -36,7 +37,9 @@ class PooPool(object):
                                          on_message=self.on_message,
                                          on_error=self.on_error,
                                          on_close=self.on_close)
-        self.ws.run_forever()
+        # self.ws.run_forever()
+        self.daemon = Thread(target=self.ws.run_forever)
+        self.daemon.start()
 
     def update_task(self):
         self.nonce_step = (self.nonce_end - self.nonce_start) // self.num_threads
@@ -113,6 +116,9 @@ class PooPool(object):
                 if not self.running:
                     print("### Error: Received newBlock while not running ###")
                     return
+                self.end_task()
+                self.next_task()
+            elif msg_type == 'error':
                 self.end_task()
                 self.next_task()
             else:
