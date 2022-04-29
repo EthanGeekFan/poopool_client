@@ -5,7 +5,7 @@ from pyopencl.tools import PooledBuffer
 from gpu.buffer_structs import BufferStructs
 from multiprocessing.shared_memory import SharedMemory
 
-max_block_size = 1024 * 1024  # 1MB
+max_block_size = 1024  # 1KB
 
 
 class GPUMiner:
@@ -27,7 +27,7 @@ class GPUMiner:
             print(' Device - Max clock frequency: {} MHz'.format(device.max_clock_frequency))
         print('--------------------------------------------------------------------------')
         print(' Using device: ' + self.dev.name)
-        self.work_group_size = self.dev.max_work_group_size * (self.dev.max_compute_units // 4 * 4 // 4)
+        self.work_group_size = self.dev.max_work_group_size
         print(' Work group size: ' + str(self.work_group_size))
         # Compile the kernel
         kernel_src = self.buffer_structs.code
