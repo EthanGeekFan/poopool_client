@@ -7,6 +7,7 @@ from multiprocessing import cpu_count
 from threading import Thread
 import miner
 import sys
+from gpu.gpu_miner import GPUMiner
 
 
 NONCE_SIZE = 64  # bytes
@@ -32,6 +33,7 @@ class PooPool(object):
         self.target = None
         self.running = False
         self.task_updated = False
+        self.gpu = GPUMiner()
         print(f"Connecting to pool at {url}, mining with {num_threads} threads")
         self.ws = websocket.WebSocketApp(url,
                                          on_open=self.on_open,
@@ -69,15 +71,19 @@ class PooPool(object):
     def start_task(self):
         self.running = True
         self.start_time = time.time()
-        for i in range(self.num_threads):
-            p = Process(target=miner.mine,
-                        args=(self.block_prefix, self.block_suffix, self.nonce_start + i * self.nonce_step,
-                              self.nonce_start + (i + 1) * self.nonce_step, self.target, self.memory.name))
-            p.start()
-            self.processes.append(p)
-        for p in self.processes:
-            p.join()
-        time.sleep(1)
+        # for i in range(self.num_threads):
+        #     p = Process(target=miner.mine,
+        #                 args=(self.block_prefix, self.block_suffix, self.nonce_start + i * self.nonce_step,
+        #                       self.nonce_start + (i + 1) * self.nonce_step, self.target, self.memory.name))
+        #     p.start()
+        #     self.processes.append(p)
+        # for p in self.processes:
+        #     p.join()
+        threads = []
+        gpu_thread = Thread(target=self.gpu.mine, args=(self.block_prefix, self.block_suffix, self.nonce_start,
+                                                     self.nonce_end, self.target, self.memory.name))
+        gpu_thread.start()
+        gpu_thread.join()
         self.end_time = time.time()
         success = self.memory.buf[0]
         block = str(self.memory.buf[1:1 + len(self.block_prefix) + len(self.block_suffix) + NONCE_SIZE].tobytes(),
@@ -143,9 +149,13 @@ class PooPool(object):
         print(error)
 
     def on_close(self, ws, close_status, close_reason):
-        print("### closed ###")
         self.end_task()
         self.connected = False
+        for p in self.processes:
+            p.terminate()
+        self.memory.close()
+        self.memory.unlink()
+        print("### closed ###")
 
 
 if __name__ == "__main__":
