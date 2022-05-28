@@ -14,7 +14,6 @@ class GPUMiner:
         self.devices = cl.get_platforms()[0].get_devices()
         self.ctx = cl.Context(self.devices)
         self.queue = cl.CommandQueue(self.ctx)
-        self.dev = self.devices[0]
         for device in self.devices:
             print('--------------------------------------------------------------------------')
             print(' Device - Name: ' + device.name)
@@ -25,6 +24,12 @@ class GPUMiner:
             print(' Device - Local memory size:  {}'.format(device.local_mem_size))
             print(' Device - Max clock frequency: {} MHz'.format(device.max_clock_frequency))
         print('--------------------------------------------------------------------------')
+        idx = input("Select a device to use: ")
+        try:
+            idx = int(idx)
+        except:
+            idx = 0
+        self.dev = self.devices[idx]
         print(' Using device: ' + self.dev.name)
         self.work_group_size = self.dev.max_work_group_size
         print(' Work group size: ' + str(self.work_group_size))
