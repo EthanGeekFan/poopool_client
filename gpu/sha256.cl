@@ -334,9 +334,9 @@ static void funcName(passTag const unsigned int *pass, int pass_len, hashTag uns
 }
 
 def_hash(hash_global, __global, __global)
-def_hash(hash_private, __private, __private)
-def_hash(hash_glbl_to_priv, __global, __private)
-def_hash(hash_priv_to_glbl, __private, __global)
+//def_hash(hash_private, __private, __private)
+//def_hash(hash_glbl_to_priv, __global, __private)
+//def_hash(hash_priv_to_glbl, __private, __global)
 
 #undef F0
 #undef F1

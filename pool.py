@@ -71,18 +71,17 @@ class PooPool(object):
     def start_task(self):
         self.running = True
         self.start_time = time.time()
-        # for i in range(self.num_threads):
-        #     p = Process(target=miner.mine,
-        #                 args=(self.block_prefix, self.block_suffix, self.nonce_start + i * self.nonce_step,
-        #                       self.nonce_start + (i + 1) * self.nonce_step, self.target, self.memory.name))
-        #     p.start()
-        #     self.processes.append(p)
-        # for p in self.processes:
-        #     p.join()
-        threads = []
+        for i in range(self.num_threads):
+            p = Process(target=miner.mine,
+                        args=(self.block_prefix, self.block_suffix, self.nonce_start + i * self.nonce_step,
+                              self.nonce_start + (i + 1) * self.nonce_step, self.target, self.memory.name))
+            p.start()
+            self.processes.append(p)
         gpu_thread = Thread(target=self.gpu.mine, args=(self.block_prefix, self.block_suffix, self.nonce_start,
-                                                     self.nonce_end, self.target, self.memory.name))
+                                                        self.nonce_end, self.target, self.memory.name))
         gpu_thread.start()
+        for p in self.processes:
+            p.join()
         gpu_thread.join()
         self.end_time = time.time()
         success = self.memory.buf[0]

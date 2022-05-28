@@ -1,7 +1,6 @@
 import os
 import numpy as np
 import pyopencl as cl
-from pyopencl.tools import PooledBuffer
 from gpu.buffer_structs import BufferStructs
 from multiprocessing.shared_memory import SharedMemory
 
