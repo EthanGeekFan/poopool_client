@@ -33,7 +33,7 @@ class PooPool(object):
         self.target = None
         self.running = False
         self.task_updated = False
-        self.gpu = GPUMiner()
+        # self.gpu = GPUMiner()
         print(f"Connecting to pool at {url}, mining with {num_threads} threads")
         self.ws = websocket.WebSocketApp(url,
                                          on_open=self.on_open,
@@ -77,12 +77,12 @@ class PooPool(object):
                               self.nonce_start + (i + 1) * self.nonce_step, self.target, self.memory.name))
             p.start()
             self.processes.append(p)
-        gpu_thread = Thread(target=self.gpu.mine, args=(self.block_prefix, self.block_suffix, self.nonce_start,
-                                                        self.nonce_end, self.target, self.memory.name))
-        gpu_thread.start()
+        # gpu_thread = Thread(target=self.gpu.mine, args=(self.block_prefix, self.block_suffix, self.nonce_start,
+        #                                                 self.nonce_end, self.target, self.memory.name))
+        # gpu_thread.start()
         for p in self.processes:
             p.join()
-        gpu_thread.join()
+        # gpu_thread.join()
         self.end_time = time.time()
         success = self.memory.buf[0]
         block = str(self.memory.buf[1:1 + len(self.block_prefix) + len(self.block_suffix) + NONCE_SIZE].tobytes(),

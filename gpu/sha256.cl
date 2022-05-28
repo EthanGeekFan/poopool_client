@@ -353,7 +353,7 @@ __kernel void hash_main(__global const inbuf * inbuffer, __global outbuf * outbu
 {
     unsigned int idx = get_global_id(0);
     // unsigned int hash[32/4]={0};
-//    hash_global(inbuffer[idx].buffer, inbuffer[idx].length, outbuffer[idx].buffer);
+    hash_global(inbuffer[idx].buffer, inbuffer[idx].length, outbuffer[idx].buffer);
 /*     outbuffer[idx].buffer[0]=hash[0];
     outbuffer[idx].buffer[1]=hash[1];
     outbuffer[idx].buffer[2]=hash[2];
@@ -362,10 +362,10 @@ __kernel void hash_main(__global const inbuf * inbuffer, __global outbuf * outbu
     outbuffer[idx].buffer[5]=hash[5];
     outbuffer[idx].buffer[6]=hash[6];
     outbuffer[idx].buffer[7]=hash[7]; */
-    for (int count = 0; count < 10; count++) {
-        hash_global(inbuffer[idx].buffer, inbuffer[idx].length, outbuffer[idx].buffer);
-        if (outbuffer[idx].buffer[0] < 2 || (outbuffer[idx].buffer[0] == 2 && outbuffer[idx].buffer[1] < 0xaf000000)) {
-            return;
-        }
-    }
+//    for (int count = 0; count < 10; count++) {
+//        hash_global(inbuffer[idx].buffer, inbuffer[idx].length, outbuffer[idx].buffer);
+//        if (outbuffer[idx].buffer[0] < 2 || (outbuffer[idx].buffer[0] == 2 && outbuffer[idx].buffer[1] < 0xaf000000)) {
+//            return;
+//        }
+//    }
 }
