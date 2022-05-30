@@ -1,4 +1,6 @@
 import os
+import time
+
 import numpy as np
 import pyopencl as cl
 from gpu.buffer_structs import BufferStructs
@@ -34,8 +36,8 @@ class GPUMiner:
         self.work_group_size = self.dev.max_work_group_size
         print(' Work group size: ' + str(self.work_group_size))
         # Compile the kernel
-        kernel_src = self.buffer_structs.code
-        with open(os.path.join(os.path.dirname(__file__), 'sha256.cl'), 'r') as f:
+        kernel_src = ''
+        with open(os.path.join(os.path.dirname(__file__), 'sha256_kernel.cl'), 'r') as f:
             kernel_src += f.read()
 
         kernel_src = kernel_src.encode('ascii')
@@ -43,48 +45,79 @@ class GPUMiner:
         kernel_src = kernel_src.decode('ascii')
 
         self.program = cl.Program(self.ctx, kernel_src).build()
+        self.kernel = cl.Kernel(self.program, "mine")
 
-    def mine(self, prefix, suffix, nonce_start, nonce_end, target, shm_name):
+    def mine(self, prefix, suffix, nonce_start, nonce_end, shm_name):
+        print("GPU starting at nonce: " + format(nonce_start, '064x'))
         mem = SharedMemory(shm_name)
         block_size = len(prefix) + len(suffix) + 64
+        payload_word_len = block_size // 4
+
+        prefix_len = len(prefix)
+        suffix_len = len(suffix)
+        if block_size % 4:
+            payload_word_len += 1
+        # Prepare buffers
+        prefix_buffer = cl.Buffer(self.ctx, cl.mem_flags.READ_ONLY, prefix_len)
+        cl.enqueue_copy(self.queue, prefix_buffer, prefix.encode('utf-8'))
+        suffix_buffer = cl.Buffer(self.ctx, cl.mem_flags.WRITE_ONLY, suffix_len)
+        cl.enqueue_copy(self.queue, suffix_buffer, suffix.encode('utf-8'))
+        nonce_start_buffer = cl.Buffer(self.ctx, cl.mem_flags.READ_ONLY, 32)
+        out_buffer = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, 4 * 17)
+        payload_mem_buffer = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, payload_word_len * 4 * self.work_group_size)
+
+        # Prepare args
+        self.kernel.set_arg(0, prefix_buffer)
+        self.kernel.set_arg(1, prefix_len.to_bytes(4, 'little'))
+        self.kernel.set_arg(2, suffix_buffer)
+        self.kernel.set_arg(3, suffix_len.to_bytes(4, 'little'))
+        self.kernel.set_arg(4, nonce_start_buffer)
+        self.kernel.set_arg(5, out_buffer)
+        self.kernel.set_arg(6, payload_mem_buffer)
         for offset in range(nonce_start, nonce_end, self.work_group_size):
-            # Create the buffers
-            raw_buffer = bytearray()
-            if not mem.buf[0] == 0:
-                # new block
-                break
-            for i in range(self.work_group_size):
-                nonce_str = format(offset + i, "064x")
-                block_with_nonce = prefix + nonce_str + suffix
-                size = block_size
-                raw_buffer.extend(size.to_bytes(self.buffer_structs.wordSize, byteorder='little') +
-                                  block_with_nonce.encode('utf-8') +
-                                  b'\x00' * (self.buffer_structs.inBufferSize_bytes - size))
-            raw_buffer = np.frombuffer(raw_buffer, dtype=np.uint32)
-            result_buffer = np.zeros(self.buffer_structs.outBufferSize * self.work_group_size, dtype=np.uint32)
-            in_buffer_gpu = cl.Buffer(self.ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=raw_buffer)
-            out_buffer_gpu = cl.Buffer(self.ctx, cl.mem_flags.WRITE_ONLY, result_buffer.nbytes)
-            # Execute the kernel
-            self.program.hash_main(self.queue, (self.work_group_size,), None, in_buffer_gpu, out_buffer_gpu)
-            # Copy the result back to the host
-            cl.enqueue_copy(self.queue, result_buffer, out_buffer_gpu)
+            cl.enqueue_copy(self.queue, nonce_start_buffer, offset.to_bytes(32, 'big'))
+            cl.enqueue_nd_range_kernel(self.queue, self.kernel, (self.work_group_size,), (self.work_group_size,))
+            result = bytearray(4 * 17)
+            cl.enqueue_copy(self.queue, result, out_buffer)
+            self.queue.finish()
+
             # Check the result
-            hash_word_size = self.buffer_structs.outBufferSize_bytes // self.buffer_structs.wordSize
-            for i in range(0, len(result_buffer), hash_word_size):
-                blockhash = bytes(result_buffer[i:i + hash_word_size]).hex()
-                if blockhash < target:
-                    mem.buf[0] = 1
-                    final_block = prefix + format(offset + (i // hash_word_size), "064x") + suffix
-                    mem.buf[1:1 + block_size] = final_block.encode('utf-8')
-                    mem.buf[1 + block_size:1 + block_size + len(blockhash)] = blockhash.encode('utf-8')
-                    print("GPU found block: " + final_block)
-                    print("GPU found hash: " + blockhash)
-                    print("GPU found nonce: " + format(offset + (i // hash_word_size), "064x"))
-                    mem.close()
-                    return
+            if result[-4] == 1:
+                # Successfully mined
+                nonce = int.from_bytes(bytes(result[:8 * 4]), 'big')
+                nonce = format(nonce, '064x')
+                blockhash = bytes(result[8 * 4:16 * 4]).hex()
+                final_block = prefix + nonce + suffix
+                print("GPU found hash: " + blockhash)
+                # print("hash[0] = " + format(result[9 * 4], 'x'))
+                # print("hash[1] = " + format(result[9 * 4 + 1], 'x'))
+                # print("hash[2] = " + format(result[9 * 4 + 2], 'x'))
+                # print("hash[3] = " + format(result[9 * 4 + 3], 'x'))
+                print("GPU found nonce: " + nonce)
+                print("GPU found block: " + final_block)
+                mem.buf[0] = 1
+                mem.buf[1:1 + block_size] = final_block.encode('utf-8')
+                mem.buf[1 + block_size:1 + block_size + len(blockhash)] = blockhash.encode('utf-8')
+                mem.close()
+                return
+            if mem.buf[0] == 1:
+                print("GPU failed with iter: " + format(offset - nonce_start, 'x'))
+                break
         # If we get here, we didn't find a match
         mem.close()
         return
 
+
+if __name__ == "__main__":
+    gpu = GPUMiner()
+    prefix = '{"T":"00000002af000000000000000000000000000000000000000000000000000000","created":1653617251,"miner":"Blockheads PooPool","nonce":"'
+    suffix = '","note":"This is for sale. Please contact us if you want to buy it.","previd":"0000000155c933e828eea35e80f11d6fddd8083931351ccc0012e509359004d9","txids":["79b2ea89c88de1d7fee74b45eafb50926a5975cabb9bd85cd293bb6f315624bc"],"type":"block"}'
+    nonce_start = 0x0000666666666666666666666666666666666666666666666666666666fccd00
+    nonce_end = 0x0000777777777777777777777777777777777777777777777777777777777777
+    mem = SharedMemory(create=True, size=len(prefix) + len(suffix) + 64 + 64 + 1)
+    start = time.time()
+    gpu.mine(prefix, suffix, nonce_start, nonce_end, mem.name)
+    end = time.time()
+    print("Time taken: " + str(end - start))
 
 
