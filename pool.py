@@ -157,7 +157,10 @@ class PooPool(object):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 2:
+    if len(sys.argv) == 1:
+        pool_url = "ws://45.77.6.79:6666/"
+        pool = PooPool(pool_url)
+    elif len(sys.argv) == 2:
         pool_url = sys.argv[1]
         pool = PooPool(pool_url)
     elif len(sys.argv) > 2:
